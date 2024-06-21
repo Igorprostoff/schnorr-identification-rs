@@ -1,16 +1,14 @@
 use std::str::FromStr;
 use elliptic_curve::{CurveArithmetic, NonZeroScalar, PrimeField, ProjectivePoint, Scalar};
-use elliptic_curve::group::Curve;
 use elliptic_curve::ops::{MulByGenerator, Reduce};
 use elliptic_curve::rand_core::CryptoRngCore;
+use rand::RngCore;
 use crate::auth_session::AuthSession;
-
 
 pub struct Prover<T: CurveArithmetic> {
     private_key: NonZeroScalar<T>,
     curve: T,
-    X : T::AffinePoint,
-    auth_session: AuthSession<T>
+    pub auth_session: AuthSession<T>
 }
 
 pub fn init<T: CurveArithmetic>(curve: T, hex_password: &str) -> Prover<T> {
@@ -20,8 +18,7 @@ pub fn init<T: CurveArithmetic>(curve: T, hex_password: &str) -> Prover<T> {
             Prover{
                 curve,
                 private_key: p_key,
-                X: ProjectivePoint::<T>::mul_by_generator(&p_key).to_affine(),
-                auth_session: AuthSession{C: None, R: None, e: None, r:None}
+                auth_session: AuthSession{C: None, R: None, e: None, r:None, X: Some(ProjectivePoint::<T>::mul_by_generator(&p_key))}
             }
         },
         Err(e) => panic!("Unable to parse, err = {e}")
@@ -29,12 +26,20 @@ pub fn init<T: CurveArithmetic>(curve: T, hex_password: &str) -> Prover<T> {
     
 }
 impl<T: CurveArithmetic> Prover<T> {
-    pub fn gen_R(&mut self, rng: &mut impl CryptoRngCore){
-        let r = NonZeroScalar::<T>::random(rng);
-        let R = ProjectivePoint::<T>::mul_by_generator(&r).to_affine();
+    pub fn gen_R(&mut self){
+        let mut random = rand::thread_rng().next_u64();
+        let r = NonZeroScalar::<T>::from_uint(random.into()).unwrap();
+        let R = ProjectivePoint::<T>::mul_by_generator(&r);
         self.auth_session.R = Some(R);
+        self.auth_session.r = Some(r);
     }
 
+    pub fn consume_c(&mut self, c: NonZeroScalar<T>)
+        where T: CurveArithmetic
+    {
+        self.auth_session.C = Some(c);
+    }
+    
     pub fn gen_e(&mut self)
     where T: CurveArithmetic
     {
