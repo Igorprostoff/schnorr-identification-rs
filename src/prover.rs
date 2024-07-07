@@ -1,9 +1,13 @@
 use std::str::FromStr;
-use elliptic_curve::{CurveArithmetic, NonZeroScalar, PrimeField, ProjectivePoint, Scalar};
+use elliptic_curve::{CurveArithmetic, FieldBytes, NonZeroScalar, PrimeField, ProjectivePoint, Scalar};
+use elliptic_curve::generic_array::arr;
+use elliptic_curve::group::Curve;
 use elliptic_curve::ops::{MulByGenerator, Reduce};
+use elliptic_curve::point::AffineCoordinates;
 use elliptic_curve::rand_core::CryptoRngCore;
 use rand::RngCore;
 use crate::auth_session::AuthSession;
+use base64::{Engine, engine::general_purpose::STANDARD, read::DecoderReader};
 
 pub struct Prover<T: CurveArithmetic> {
     private_key: NonZeroScalar<T>,
@@ -32,6 +36,22 @@ impl<T: CurveArithmetic> Prover<T> {
         let R = ProjectivePoint::<T>::mul_by_generator(&r);
         self.auth_session.R = Some(R);
         self.auth_session.r = Some(r);
+    }
+    
+    pub fn serialize_R(&mut self) -> Option<String>{
+        let mut R_x_coord: FieldBytes<T>= FieldBytes::<T>::default();
+
+        match self.auth_session.R {
+            Some(R) => {
+                R_x_coord = R.to_affine().x()
+                
+            },
+            None => {
+                return None
+            }
+        }
+        Some(STANDARD.encode(R_x_coord))
+        
     }
 
     pub fn consume_c(&mut self, c: NonZeroScalar<T>)
