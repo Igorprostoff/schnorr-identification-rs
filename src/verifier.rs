@@ -1,7 +1,10 @@
 use std::ops::Mul;
-use elliptic_curve::{CurveArithmetic, Group, NonZeroScalar, ProjectivePoint};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use elliptic_curve::{CurveArithmetic, FieldBytes, Group, NonZeroScalar, ProjectivePoint};
 use elliptic_curve::group::Curve;
 use elliptic_curve::ops::MulByGenerator;
+use elliptic_curve::point::AffineCoordinates;
 use elliptic_curve::rand_core::CryptoRngCore;
 use rand::RngCore;
 use crate::prover::{Prover};
@@ -19,10 +22,33 @@ pub fn init<T: CurveArithmetic>(curve: T) -> Verifier<T> {
             }
 }
 impl<T: CurveArithmetic> Verifier<T> {
-    pub fn gen_c(&mut self){
-        let mut random = rand::thread_rng().next_u64();
+    pub fn gen_c(&mut self, random_value: Option<u64>){
+        let mut random = 0;
+        match random_value { 
+            Some(rand_val) => {random = rand_val},
+            None => {random  = rand::thread_rng().next_u64();}
+        }
+        
         let C = NonZeroScalar::<T>::from_uint(random.into()).unwrap();
         self.auth_session.C = Some(C);
+    }
+
+    pub fn serialize_c(&mut self) -> Option<String>{
+
+        match self.auth_session.C {
+            Some(C) => {
+                let c = C;
+                let C_array = FieldBytes::<T>::from(c);
+                
+                return Some(STANDARD.encode(C_array))
+                
+            },
+            None => {
+                return None
+            }
+        }
+        
+
     }
 
     pub fn consume_X(&mut self, X: T::ProjectivePoint)
