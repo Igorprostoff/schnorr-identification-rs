@@ -1,47 +1,40 @@
-use std::ops::Mul;
+use alloc::string::{String, ToString};
+use core::ops::Mul;
+use core::str::FromStr;
+use ark_ec::{CurveGroup, PrimeGroup};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use elliptic_curve::{CurveArithmetic, FieldBytes, Group, NonZeroScalar, ProjectivePoint};
-use elliptic_curve::group::Curve;
-use elliptic_curve::ops::MulByGenerator;
-use elliptic_curve::point::AffineCoordinates;
-use elliptic_curve::rand_core::CryptoRngCore;
-use rand::RngCore;
-use crate::prover::{Prover};
+use rand::rngs::SmallRng;
+use rand::{RngCore, SeedableRng};
 use crate::auth_session::AuthSession;
-
-pub struct Verifier<T:  CurveArithmetic> {
-    curve: T,
-
-    pub auth_session: AuthSession<T>
+use ark_test_curves::secp256k1::{G1Projective as G, G1Affine as GAffine, Fr as ScalarField, Config, FrConfig};
+use ark_test_curves::secp256k1::Fq;
+pub struct Verifier {
+    pub auth_session: AuthSession
 }
-pub fn init<T: CurveArithmetic>(curve: T) -> Verifier<T> {
+pub fn init() -> Verifier {
             Verifier{
-                curve,
                 auth_session: AuthSession{C: None, R: None, e: None, r:None, X:None}
             }
 }
-impl<T: CurveArithmetic> Verifier<T> {
+impl Verifier {
     pub fn gen_c(&mut self, random_value: Option<u64>){
         let mut random = 0;
+        let mut small_rng = SmallRng::seed_from_u64(1);
         match random_value { 
             Some(rand_val) => {random = rand_val},
-            None => {random  = rand::thread_rng().next_u64();}
+            None => {random  = small_rng.next_u64();}
         }
         
-        let C = NonZeroScalar::<T>::from_uint(random.into()).unwrap();
+        let C = ScalarField::from(random);
         self.auth_session.C = Some(C);
     }
-
     pub fn serialize_c(&mut self) -> Option<String>{
 
         match self.auth_session.C {
             Some(C) => {
-                let c = C;
-                let C_array = FieldBytes::<T>::from(c);
-                
-                return Some(STANDARD.encode(C_array))
-                
+                //println!("Serializing c = {}",C.to_string());
+                return Some(STANDARD.encode(C.to_string()))
             },
             None => {
                 return None
@@ -51,20 +44,67 @@ impl<T: CurveArithmetic> Verifier<T> {
 
     }
 
-    pub fn consume_X(&mut self, X: T::ProjectivePoint)
-        where T: CurveArithmetic
+    pub fn consume_X(&mut self, X: String)
     {
-        self.auth_session.X = Some(X);
+        let decoded_X = STANDARD.decode(X);
+        return match decoded_X {
+            Err(e) => {
+                panic!()
+            }
+            (X) => {
+                let X_str = String::from_utf8(X.unwrap()).unwrap();
+                
+                let X_x_coord = Fq::from_str(&*X_str);
+
+                let point = GAffine::get_point_from_x_unchecked(X_x_coord.unwrap(), false);
+                //println!("Got point X {} from x coord {}", point.unwrap(), X_x_coord.unwrap());
+                self.auth_session.X = point
+            }
+        }
     }
-    pub fn consume_R(&mut self, R: T::ProjectivePoint)
-        where T: CurveArithmetic
+    pub fn consume_R(&mut self, R:String)
     {
-        self.auth_session.R = Some(R);
+        let decoded_R = STANDARD.decode(R);
+        return match decoded_R {
+            Err(e) => {
+                panic!()
+            }
+            (R) => {
+                let R_str = String::from_utf8(R.unwrap()).unwrap();
+
+
+                let R_x_coord = Fq::from_str(&*R_str);
+
+                let point = GAffine::get_point_from_x_unchecked(R_x_coord.unwrap(), true);
+                //println!("Got point R {} from x coord {}", point.unwrap(), R_x_coord.unwrap());
+                self.auth_session.R = point
+            }
+        }
     }
-    pub fn verify_e(&mut self, e: NonZeroScalar<T>) -> bool {
-        let eG = ProjectivePoint::<T>::mul_by_generator(&e);
-        let cX = self.auth_session.X.unwrap().mul(self.auth_session.C.unwrap().as_ref());
-        eG == self.auth_session.R.unwrap() + cX
+    
+    pub fn verify_e(&mut self, e: String) -> bool {
+
+        let g = G::generator();
+
+        let decoded_e = STANDARD.decode(e);
+        return match decoded_e {
+            Err(e) => {
+                false
+            }
+            (E) => {
+                let e_str = String::from_utf8(E.unwrap()).unwrap();
+
+                let coord = ScalarField::from_str(&*e_str);
+                //println!("Multiplying point {} by scalar {}", g, coord.unwrap());
+                let eG = g.mul(coord.unwrap());
+                
+                let cX = self.auth_session.X.unwrap().mul(self.auth_session.C.unwrap());
+                //println!("{}{}", eG, self.auth_session.R.unwrap() + cX);
+                eG == self.auth_session.R.unwrap() + cX
+            }
+        }
+            
+        
 
     }
 }
