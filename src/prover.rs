@@ -1,10 +1,13 @@
 use alloc::string::{String, ToString};
 use core::ops::Mul;
-use core::str::FromStr;
+use core::str::{FromStr};
+use bytes::Bytes;
+
 use crate::auth_session::AuthSession;
 use base64::{ Engine, engine::general_purpose::STANDARD};
 use ark_ec::{AffineRepr, PrimeGroup, CurveGroup, VariableBaseMSM};
-use ark_test_curves::secp256k1::{G1Projective as G, Fr as ScalarField, Fq};
+use ark_ff::{Field, PrimeField};
+use ark_test_curves::secp256k1::{G1Projective as G, Fr as ScalarField, Fq, Fr};
 use rand::rngs::SmallRng;
 use rand::{RngCore, SeedableRng};
 
@@ -21,7 +24,6 @@ pub fn init(password_hash: &str) -> Prover {
     let password_scalar = ScalarField::from_str(password_hash).unwrap();
     let p_multiplied = g * password_scalar;
     let p_multiplied_affine = p_multiplied.into_affine();
-
             Prover{
                 //curve,
                 private_key: password_hash.parse().unwrap(),
@@ -48,27 +50,58 @@ impl Prover {
         self.auth_session.r = Some(r_scalar);
     }
     
-    pub fn serialize_R(&mut self) -> Option<String>{
-        let mut R_x_coord: Fq;
-
+    pub fn serialize_R(&mut self) -> Option<[u8;66]>{
         match self.auth_session.R {
             Some(R) => {
-                
-                //println!("Serialized R x coord of point {}", R);
-                Some(STANDARD.encode(R.x().unwrap().to_string()))
+
+                //println!("Serializing X x coord {}", R);
+                let mut result: [u8; 66] = [0; 66];
+                result[0] = 4;
+                result[1] = 64;
+                for i in 0..4 {
+                    let x = R.xy().unwrap().0.into_bigint().0[i].to_le_bytes();
+                    for j in 0..8 {
+                        result[2+i*8+j] = x[j];
+                    }
+                }
+
+                for i in 0..4 {
+                    let x = R.xy().unwrap().1.into_bigint().0[i].to_le_bytes();
+                    for j in 0..8 {
+                        result[2+32+i*8+j] = x[j];
+                    }
+                }
+                return Some(result);
             },
             None => {
-                return None
+                None
             }
         }
 
     }
 
-    pub fn serialize_X(&mut self) -> Option<String>{
+    pub fn serialize_X(&mut self) -> Option<[u8;66]>{
         match self.auth_session.X {
             Some(X) => {
+                
                 //println!("Serializing X x coord {}", X);
-                Some(STANDARD.encode(X.x().unwrap().to_string()))
+                let mut result: [u8; 66] = [0; 66];
+                result[0] = 4;
+                result[1] = 64;
+                for i in 0..4 {
+                    let x = X.xy().unwrap().0.into_bigint().0[i].to_le_bytes();
+                    for j in 0..8 {
+                        result[2+i*8+j] = x[j];
+                    }
+                }
+
+                for i in 0..4 {
+                    let x = X.xy().unwrap().1.into_bigint().0[i].to_le_bytes();
+                    for j in 0..8 {
+                        result[2+32+i*8+j] = x[j];
+                    }
+                }
+                return Some(result);
             },
             None => {
                 None
@@ -76,25 +109,19 @@ impl Prover {
         }
     }
 
-    pub fn consume_c(&mut self, c: String) -> bool
+    pub fn consume_c(&mut self, c: [u8;34]) -> bool
     {
-        let decoded_c = STANDARD.decode(c);
-        return match decoded_c {
-            Err(e) => {
-                false
-            }
-            (R) => {
-
-                let c_str = String::from_utf8(R.unwrap()).unwrap();
-                //println!("Decoded c {}", c_str);
-                let coord = ScalarField::from_str(&*c_str);
-
-
-                self.auth_session.C = Some(coord.unwrap());
-                true
-            }
+        if c[0] != 0x2 {
+            false;
         }
-        
+        if c[1] != 0x20 {
+            false;
+        }
+        let c = Fr::from_random_bytes(&(c[2..34])).unwrap();
+        //println!("Decoded c {}", c_str);
+       
+        self.auth_session.C = Some(c);
+        true
     }
 
 
@@ -113,15 +140,24 @@ impl Prover {
         self.auth_session.e = Some(e_scalar);
     }
 
-    pub fn serialize_e(&mut self) -> Option<String>{
-            match self.auth_session.e {
-                Some(E) => {
-                    //println!("Serializing E {} with result {}", E, E.to_string());
-                    return Some(STANDARD.encode(E.to_string()))
-                },
-                None => {
-                    return None
+    pub fn serialize_e(&mut self) -> Option<[u8;34]> {
+        match self.auth_session.e {
+            Some(e) => {
+                //println!("Serializing c = {}",C.to_string());
+                let mut result: [u8; 34] = [0; 34];
+                result[0] = 2;
+                result[1] = 32;
+                for i in 0..4 {
+                    let x = e.into_bigint().0[i].to_le_bytes();
+                    for j in 0..8 {
+                        result[2 + i * 8 + j] = x[j];
+                    }
                 }
+                return Some(result)
+            },
+            None => {
+                return None
             }
         }
+    }
 }

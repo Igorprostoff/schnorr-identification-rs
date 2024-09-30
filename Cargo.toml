@@ -9,3 +9,4 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 ark-ec = { version = "0.5.0-alpha.0",  default-features = false }
 ark-ff = { version = "0.5.0-alpha.0",  default-features = false }
 ark-test-curves = { version = "0.5.0-alpha.0", features = ["secp256k1"],  default-features = false }
+bytes = "1.7.2"
